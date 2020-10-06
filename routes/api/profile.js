@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const auth = require('../../middleware/auth');
 const { body, validationResult } = require('express-validator');
+const normalize = require('normalize-url');
 
 const Profile = require('../../models/Profile');
 const User = require('../../models/User');
@@ -60,6 +61,54 @@ router.post(
       linkedin,
       facebook,
     } = req.body;
+
+    // Build profile object
+    const profileFields = {
+      user: req.user.id,
+      company,
+      location,
+      website:
+        website && website !== ''
+          ? normalize(website, { forceHttps: true })
+          : '',
+      bio,
+      skills: Array.isArray(skills)
+        ? skills
+        : skills.split(',').map((skill) => skill.trim()),
+      status,
+      githubusername,
+    };
+
+    // Build social object and add to profileFields
+    const socialfields = { youtube, twitter, instagram, linkedin, facebook };
+
+    for (const [key, value] of Object.entries(socialfields)) {
+      if (value && value.length > 0)
+        socialfields[key] = normalize(value, { forceHttps: true });
+    }
+    profileFields.social = socialfields;
+
+    try {
+      let profile = await Profile.findOne({ user: req.user.id });
+
+      if (profile) {
+        // Update
+        profile = await Profile.findOneAndUpdate(
+          { user: req.user.id },
+          { $set: profileFields },
+          { new: true }
+        );
+
+        return res.json(profile);
+      }
+
+      profile = new Profile(profileFields);
+      await profile.save();
+      res.json(profile);
+    } catch (err) {
+      console.log(err.message);
+      res.status(500).send('Server Error');
+    }
   }
 );
 
